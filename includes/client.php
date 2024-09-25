@@ -32,7 +32,7 @@ function hsr_display_reservation_form() {
     $user_name = $current_user->display_name;
     $user_phone = get_user_meta($current_user->ID, 'phone', true);
 
-    echo '<form method="post" id="reservation-form">';
+    echo '<form method="post" id="reservation-form" enctype="multipart/form-data">';
     wp_nonce_field('hsr_reservation_nonce');
 
     echo '<p>이름: ' . esc_html($user_name) . '</p>';
@@ -50,7 +50,7 @@ function hsr_display_reservation_form() {
 
     echo '<div class="reservation-grid">';
     echo '<div class="reservation-column">';
-    echo '<label for="hsr_date">날짜:</label>';
+    echo '<label for="hsr_date">Date:</label>';
     echo '<select id="hsr_date" name="hsr_date" required size="4">';
     foreach ($dates as $date) {
         echo '<option value="' . esc_attr($date) . '">' . esc_html($date) . '</option>';
@@ -59,14 +59,22 @@ function hsr_display_reservation_form() {
     echo '</div>';
 
     echo '<div class="reservation-column" id="staff-container" >';
-    echo '<label for="hsr_staff">직원:</label>';
+    echo '<label for="hsr_staff">Staff:</label>';
     echo '<select id="hsr_staff" name="hsr_staff" required size="4"></select>';
     echo '</div>';
 
     echo '<div class="reservation-column" id="time-container">';
-    echo '<label for="hsr_time">시간:</label>';
+    echo '<label for="hsr_time">Time:</label>';
     echo '<select id="hsr_time" name="hsr_time" required size="10"></select>';
     echo '</div>';
+    echo '</div>';
+    echo '<div class="reservation-column">';
+    echo '<label for="hsr_memo">Comment:</label>';
+    echo '<textarea id="hsr_memo" name="hsr_memo" rows="4" cols="50"></textarea>';
+    echo '</div>';
+    echo '<div class="reservation-column">';
+    echo '<label for="hsr_photo">Photo:</label>';
+    echo '<input type="file" id="hsr_photo" name="hsr_photo" accept="image/*">';
     echo '</div>';
 
     submit_button('예약하기', 'primary', 'hsr_submit_reservation');
@@ -171,6 +179,7 @@ function hsr_handle_reservation_submission() {
     $avail_date = sanitize_text_field($_POST['hsr_date']);
     $avail_staff = sanitize_text_field($_POST['hsr_staff']);
     $avail_time = sanitize_text_field($_POST['hsr_time']);
+    $memo = sanitize_textarea_field($_POST['hsr_memo']);
 
     // Validate inputs
     if (empty($name) || empty($phone) || empty($avail_staff) || empty($avail_time)) {
@@ -195,6 +204,25 @@ function hsr_handle_reservation_submission() {
         return;
     }
 
+    $photo_url = '';
+    /*
+    error_log('$_FILES contents: ' . print_r($_FILES, true)); // check
+
+    if (!empty($_FILES['hsr_photo']['name'])) {
+        error_log('File upload attempt: ' . print_r($_FILES['hsr_photo'], true));
+    } else {
+        error_log('No file uploaded');
+    } */
+    if (!empty($_FILES['hsr_photo']['name'])) {
+        $upload = wp_handle_upload($_FILES['hsr_photo'], array('test_form' => false));
+        error_log('Upload result: ' . print_r($upload, true));
+        if ($upload && !isset($upload['error'])) {
+            $photo_url = $upload['url'];
+        } else {
+            echo '<div class="error"><p>사진 업로드에 실패했습니다.</p></div>';
+            return;
+        }
+    }
     // 예약 삽입
     $wpdb->insert($reservations_table, [
         'name' => $name,
@@ -202,7 +230,9 @@ function hsr_handle_reservation_submission() {
         'user_id' => $user_id,
         'date' => $slot->date,
         'time' => $slot->time,
-        'staff_id' => $slot->staff_id
+        'staff_id' => $slot->staff_id,
+        'memo' => $memo,
+        'photo_url' => $photo_url
     ]);
 
     // 예약된 availability 삭제
@@ -211,7 +241,7 @@ function hsr_handle_reservation_submission() {
     echo '<div class="updated"><p>예약이 완료되었습니다. 감사합니다!</p></div>';
 
     // 이메일 발송
-    hsr_send_reservation_emails($name, $phone, $slot->date, $slot->time, $slot->staff_id);
+    hsr_send_reservation_emails($name, $phone, $slot->date, $slot->time, $slot->staff_id, $memo, $photo_url);
 }
 
 

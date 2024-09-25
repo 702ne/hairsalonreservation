@@ -30,6 +30,8 @@ function hsr_create_tables() {
         staff_id mediumint(9) NOT NULL,
         date DATE NOT NULL,
         time TIME NOT NULL,
+        memo TEXT,
+        photo_url VARCHAR(255),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY  (id),
     FOREIGN KEY (staff_id) REFERENCES $staff_table(id)
