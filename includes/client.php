@@ -46,7 +46,7 @@ function hsr_display_reservation_form() {
         echo '<p>전화번호: ' . esc_html($user_phone) . '</p>';
     }
 
-    $dates = $wpdb->get_col("SELECT DISTINCT date FROM $availability_table WHERE date >= CURDATE() ORDER BY date");
+    $dates = $wpdb->get_col("SELECT DISTINCT date FROM $availability_table WHERE date >= CURDATE() AND reservation_id is null ORDER BY date");
 
     echo '<div class="reservation-grid">';
     echo '<div class="reservation-column">';
@@ -197,22 +197,15 @@ function hsr_handle_reservation_submission() {
     }
 
     // 예약 중복 확인
-    $existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $reservations_table WHERE date = %s AND time = %s AND staff_id = %d", $slot->date, $slot->time, $slot->staff_id));
+    //$existing = $wpdb->get_row($wpdb->prepare("SELECT * FROM $reservations_table WHERE date = %s AND time = %s AND staff_id = %d", $slot->date, $slot->time, $slot->staff_id));
 
-    if ($existing) {
+    //if ($existing) {
+    if ($slot->reservation_id != null) {
         echo '<div class="error"><p>선택한 시간대는 이미 예약되었습니다.</p></div>';
         return;
     }
 
     $photo_url = '';
-    /*
-    error_log('$_FILES contents: ' . print_r($_FILES, true)); // check
-
-    if (!empty($_FILES['hsr_photo']['name'])) {
-        error_log('File upload attempt: ' . print_r($_FILES['hsr_photo'], true));
-    } else {
-        error_log('No file uploaded');
-    } */
     if (!empty($_FILES['hsr_photo']['name'])) {
         $upload = wp_handle_upload($_FILES['hsr_photo'], array('test_form' => false));
         error_log('Upload result: ' . print_r($upload, true));
@@ -228,15 +221,19 @@ function hsr_handle_reservation_submission() {
         'name' => $name,
         'phone' => $phone,
         'user_id' => $user_id,
-        'date' => $slot->date,
-        'time' => $slot->time,
-        'staff_id' => $slot->staff_id,
         'memo' => $memo,
         'photo_url' => $photo_url
     ]);
+    $reservation_id = $wpdb->insert_id;
 
+    // availability 테이블 업데이트
+    $wpdb->update(
+        $availability_table,
+        ['reservation_id' => $reservation_id],
+        ['id' => $slot->id]
+    );
     // 예약된 availability 삭제
-    $wpdb->delete($availability_table, ['id' => $slot->id]);
+    //$wpdb->delete($availability_table, ['id' => $slot->id]);
 
     echo '<div class="updated"><p>예약이 완료되었습니다. 감사합니다!</p></div>';
 
@@ -319,18 +316,25 @@ function hsr_user_reservations() {
         return;
     }
 
-    $current_user = wp_get_current_user();
     global $wpdb;
     $reservations_table = $wpdb->prefix . 'hsr_reservations';
     $staff_table = $wpdb->prefix . 'hsr_staff';
+    $availability_table = $wpdb->prefix . 'hsr_availability';
+    
+    $current_user = wp_get_current_user();
 
-    // 사용자 예약 내역 불러오기
-    $reservations = $wpdb->get_results($wpdb->prepare("SELECT r.*, s.name FROM $reservations_table r join $staff_table s ON r.staff_id = s.id WHERE user_id = %d ORDER BY date DESC, time DESC", $current_user->ID));
-    //SELECT r.*, s.name FROM $reservations_table r join $staff_table s ON r.staff_id = s.id WHERE user_id = %d ORDER BY date DESC, time DESC;
+    // 사용자 예약 내역 불러오기       
+    $reservations = $wpdb->get_results($wpdb->prepare(
+        "SELECT r.*, a.date, a.time, s.name FROM $availability_table a 
+        join $reservations_table r ON a.reservation_id = r.id 
+        join $staff_table s ON a.staff_id = s.id 
+        WHERE a.reservation_id is not null AND r.user_id = %d ORDER BY date DESC, time DESC"
+        , $current_user->ID));
+        
     if ($reservations) {
         //echo '<h3>나의 예약 내역</h3>';
         echo '<table class="wp-list-table widefat fixed striped">';
-        echo '<thead><tr><th>Name</th><th>Phone</th><th>Date</th><th>Time</th><th>Booted At</th><th>Actions</th></tr></thead><tbody>';
+        echo '<thead><tr><th>Staff</th><th>Phone</th><th>Date</th><th>Time</th><th>Booted At</th><th>Actions</th></tr></thead><tbody>';
         foreach ($reservations as $reservation) {
             echo '<tr>';
             echo '<td>' . esc_html($reservation->name) . '</td>';
@@ -340,6 +344,7 @@ function hsr_user_reservations() {
             echo '<td>' . esc_html($reservation->created_at) . '</td>';
             echo '<td><a href="' . wp_nonce_url(admin_url('admin-post.php?action=hsr_delete_user_reservation&id=' . $reservation->id), 'hsr_delete_user_reservation_nonce') . '" onclick="return confirm(\'예약을 삭제하시겠습니까?\')">Delete</a></td>';
             echo '</tr>';
+
         }
         echo '</tbody></table>';
     } else {
@@ -368,7 +373,13 @@ function hsr_delete_user_reservation() {
     $reservation = $wpdb->get_row($wpdb->prepare("SELECT * FROM $reservations_table WHERE id = %d AND user_id = %d", $reservation_id, $current_user_id));
 
     if ($reservation) {
-        $wpdb->delete($reservations_table, ['id' => $reservation_id]);
+        $wpdb->delete($reservations_table, ['id' => $reservation_id]);   
+
+    $wpdb->update(
+        $availability_table,
+        ['reservation_id' => null],
+        ['reservation_id' => $reservation_id]
+    );
         wp_redirect(add_query_arg('deleted', 'true', wp_get_referer()));
         exit;
     } else {

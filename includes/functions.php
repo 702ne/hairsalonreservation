@@ -17,8 +17,10 @@ function hsr_create_tables() {
         staff_id mediumint(9) NOT NULL,
         date DATE NOT NULL,
         time TIME NOT NULL,
+        reservation_id mediumint(9) DEFAULT NULL,
     PRIMARY KEY  (id),
-    FOREIGN KEY (staff_id) REFERENCES $staff_table(id)
+    FOREIGN KEY (staff_id) REFERENCES $staff_table(id),
+    FOREIGN KEY (reservation_id) REFERENCES $reservations_table(id)
     ) $charset_collate;";
 
     // Create reservations table
@@ -27,14 +29,10 @@ function hsr_create_tables() {
         name VARCHAR(100) NOT NULL,
         phone VARCHAR(20) NOT NULL,
         user_id bigint(20) UNSIGNED DEFAULT NULL,
-        staff_id mediumint(9) NOT NULL,
-        date DATE NOT NULL,
-        time TIME NOT NULL,
         memo TEXT,
         photo_url VARCHAR(255),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY  (id),
-    FOREIGN KEY (staff_id) REFERENCES $staff_table(id)
+    PRIMARY KEY  (id)
     ) $charset_collate;";
 
     $sql3 = "CREATE TABLE $staff_table (
@@ -43,9 +41,9 @@ function hsr_create_tables() {
         PRIMARY KEY  (id)
     ) $charset_collate;";
 
-    //dbDelta($sql3);
-    //dbDelta($sql1);
-    //dbDelta($sql2);
+    // dbDelta($sql3);
+    // dbDelta($sql1);
+    // dbDelta($sql2);
 
 }
 
@@ -132,6 +130,7 @@ function hsr_get_staff_availability() {
         FROM $availability_table a 
         JOIN $staff_table s ON a.staff_id = s.id 
         WHERE a.date = %s 
+        AND a.reservation_id is null
         ORDER BY a.time, s.name",
         $date
     ));
@@ -156,6 +155,7 @@ function hsr_get_available_staff() {
         FROM $staff_table s 
         JOIN $availability_table a ON s.id = a.staff_id 
         WHERE a.date = %s 
+        AND a.reservation_id is null
         ORDER BY s.name",
         $date
     ));
@@ -177,7 +177,8 @@ function hsr_get_available_times() {
     $times = $wpdb->get_results($wpdb->prepare(
         "SELECT id, time 
         FROM $availability_table 
-        WHERE date = %s AND staff_id = %d 
+        WHERE date = %s AND staff_id = %d         
+        AND reservation_id is null
         ORDER BY time",
         $date,
         $staff_id
