@@ -190,6 +190,83 @@ function hsr_get_available_times() {
         wp_send_json_error('No times available');
     }
 }
+
+// Availability bulk job
+function hsr_bulk_add_availability() {
+    if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'hsr_bulk_add_availability_nonce')) {
+        wp_die('보안 검증에 실패했습니다.');
+    }
+
+    $date = sanitize_text_field($_POST['bulk_date']);
+    $start_time = sanitize_text_field($_POST['start_time']);
+    $end_time = sanitize_text_field($_POST['end_time']);
+    $interval = intval($_POST['interval']);
+
+    global $wpdb;
+    $staff_table = $wpdb->prefix . 'hsr_staff';
+    $availability_table = $wpdb->prefix . 'hsr_availability';
+
+    $staff_members = $wpdb->get_results("SELECT id FROM $staff_table");
+
+    $start = new DateTime($date . ' ' . $start_time);
+    $end = new DateTime($date . ' ' . $end_time);
+    $interval = new DateInterval('PT' . $interval . 'M');
+
+    $inserted = 0;
+    $period = new DatePeriod($start, $interval, $end);
+
+    foreach ($period as $dt) {
+        foreach ($staff_members as $staff) {
+            $wpdb->insert(
+                $availability_table,
+                array(
+                    'date' => $date,
+                    'time' => $dt->format('H:i:s'),
+                    'staff_id' => $staff->id
+                )
+            );
+            $inserted++;
+        }
+    }
+
+    echo '<div class="updated"><p>' . $inserted . '개의 availability가 추가되었습니다.</p></div>';
+}
+add_action('wp_ajax_hsr_make_reservation', 'hsr_make_reservation');
+
+function hsr_make_reservation() {
+    global $wpdb;
+    $availability_table = $wpdb->prefix . 'hsr_availability';
+    $reservations_table = $wpdb->prefix . 'hsr_reservations';
+
+    $availability_id = intval($_POST['availability_id']);
+    $user_id = intval($_POST['user_id']);
+    $memo = sanitize_textarea_field($_POST['memo']);
+
+    $availability = $wpdb->get_row($wpdb->prepare("SELECT * FROM $availability_table WHERE id = %d", $availability_id));
+
+    if (!$availability) {
+        wp_send_json_error('Availability not found');
+        return;
+    }
+
+    if ($availability->reservation_id) {
+        wp_send_json_error('This time slot is already booked');
+        return;
+    }
+
+    $wpdb->insert($reservations_table, [
+        'user_id' => $user_id,
+        'memo' => $memo,
+        'created_at' => current_time('mysql')
+    ]);
+
+    $reservation_id = $wpdb->insert_id;
+
+    $wpdb->update($availability_table, ['reservation_id' => $reservation_id], ['id' => $availability_id]);
+
+    wp_send_json_success();
+}
+
 // 사용자 프로필에 전화번호 필드 추가
 function hsr_add_phone_field($user) {
     ?>

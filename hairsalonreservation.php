@@ -69,6 +69,7 @@ add_action('edit_user_profile_update', 'hsr_save_phone_field');
 add_action('user_register', 'hsr_save_phone_on_registration');
 add_action('register_form', 'hsr_add_phone_field_to_registration');
 
+add_action('wp_ajax_hsr_make_reservation', 'hsr_make_reservation');
 
 add_action('wp_ajax_hsr_ajax_test', 'hsr_ajax_test');
 add_action('wp_ajax_nopriv_hsr_ajax_test', 'hsr_ajax_test');
